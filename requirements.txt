@@ -1,0 +1,36 @@
+# Core dependencies
+flask==3.0.0
+flask-cors==4.0.0
+transformers==4.36.0
+torch==2.1.0
+accelerate>=0.25.0
+numpy==1.24.3
+psycopg2-binary==2.9.9
+python-dotenv>=1.0.0
+psutil>=5.9.0
+
+# RAG and embeddings
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+langchain>=0.1.0
+PyPDF2>=3.0.0
+python-docx>=0.8.11
+beautifulsoup4>=4.12.0
+
+# Utilities
+huggingface-hub>=0.19.4
+pandas>=2.1.1
+pydantic>=2.4.2
+requests>=2.31.0
+tqdm>=4.66.0
+safetensors>=0.4.0
+
+# Monitoring and logging
+prometheus-client>=0.17.1
+python-json-logger>=2.0.7
+
+# Development
+pytest>=7.4.2
+black>=23.9.1
+flake8>=6.1.0
+isort>=5.12.0

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "agent_1709715700",
+    "name": "RAG Assistant",
+    "description": "Assistant that helps search and analyze documents using RAG",
+    "agent_type": "rag",
+    "tools": [
+      {
+        "name": "rag_search",
+        "description": "Search through documents using RAG"
+      }
+    ],
+    "status": "stopped",
+    "history": []
+  },
+  {
+    "id": "agent_1709715701",
+    "name": "Q&A Generator",
+    "description": "Agent that generates questions and answers from documents",
+    "agent_type": "qa",
+    "tools": [
+      {
+        "name": "rag_search",
+        "description": "Search through documents using RAG"
+      }
+    ],
+    "status": "stopped",
+    "history": []
+  }
+]

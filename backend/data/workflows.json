@@ -1,0 +1,101 @@
+[
+  {
+    "id": "wf_1709715600",
+    "name": "RAG Pipeline",
+    "description": "Process documents using RAG and query them",
+    "steps": [
+      {
+        "type": "system",
+        "name": "Check Resources",
+        "description": "Verify system resources",
+        "inputs": {
+          "min_memory_mb": 512,
+          "min_disk_space_gb": 10
+        }
+      },
+      {
+        "type": "rag",
+        "name": "Upload Documents",
+        "description": "Upload and process documents",
+        "inputs": {
+          "files": []
+        },
+        "config": {
+          "model_name": "deepseek-ai/deepseek-llm-7b-base",
+          "low_cpu_mem_usage": true,
+          "use_safetensors": true,
+          "device_map": "auto"
+        }
+      },
+      {
+        "type": "rag",
+        "name": "Query Documents",
+        "description": "Query processed documents",
+        "inputs": {
+          "query": ""
+        },
+        "config": {
+          "model_name": "deepseek-ai/deepseek-llm-7b-base",
+          "low_cpu_mem_usage": true,
+          "use_safetensors": true,
+          "device_map": "auto"
+        }
+      }
+    ],
+    "status": "stopped",
+    "current_step": 0,
+    "results": []
+  },
+  {
+    "id": "wf_1709715601",
+    "name": "Q&A Generation",
+    "description": "Generate questions and answers from documents",
+    "steps": [
+      {
+        "type": "system",
+        "name": "Check Resources",
+        "description": "Verify system resources",
+        "inputs": {
+          "min_memory_mb": 512,
+          "min_disk_space_gb": 10
+        }
+      },
+      {
+        "type": "prompt",
+        "name": "Generate Questions",
+        "description": "Generate questions from document content",
+        "template": "Generate 5 relevant questions from this content. Keep responses concise:\n\n{content}\n\nQuestions:",
+        "variables": ["content"],
+        "inputs": {
+          "content": ""
+        },
+        "config": {
+          "model_name": "deepseek-ai/deepseek-llm-7b-base",
+          "low_cpu_mem_usage": true,
+          "use_safetensors": true,
+          "device_map": "auto"
+        }
+      },
+      {
+        "type": "prompt",
+        "name": "Generate Answers",
+        "description": "Generate answers for the questions",
+        "template": "Provide brief, focused answers for these questions based on the document:\n\nDocument: {content}\n\nQuestions:\n{questions}\n\nAnswers:",
+        "variables": ["content", "questions"],
+        "inputs": {
+          "content": "",
+          "questions": ""
+        },
+        "config": {
+          "model_name": "deepseek-ai/deepseek-llm-7b-base",
+          "low_cpu_mem_usage": true,
+          "use_safetensors": true,
+          "device_map": "auto"
+        }
+      }
+    ],
+    "status": "stopped",
+    "current_step": 0,
+    "results": []
+  }
+]

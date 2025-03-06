@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q-RAG3 - LLM Chat Interface</title>
+    <link rel="stylesheet" href="static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Q-RAG3</h1>
+            <div id="model-status" class="status-badge">
+                Checking model status...
+            </div>
+        </header>
+
+        <main>
+            <div class="chat-container">
+                <div id="chat-messages" class="messages"></div>
+                
+                <div class="input-container">
+                    <textarea 
+                        id="user-input" 
+                        placeholder="Type your message here..."
+                        rows="3"
+                    ></textarea>
+                    <button id="send-button" class="send-button">
+                        Send
+                    </button>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <div class="memory-stats">
+                    <h3>Memory Usage</h3>
+                    <div id="memory-stats-content"></div>
+                </div>
+                
+                <div class="model-info">
+                    <h3>Model Information</h3>
+                    <div id="model-info-content"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="static/js/app.js"></script>
+</body>
+</html>
