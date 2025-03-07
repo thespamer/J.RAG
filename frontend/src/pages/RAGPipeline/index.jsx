@@ -35,7 +35,6 @@ import {
   Error as ErrorIcon,
   CheckCircle as CheckCircleIcon,
   Storage as StorageIcon,
-
   Folder as FolderIcon,
   Warning as WarningIcon,
   CleaningServices as CleaningServicesIcon
@@ -47,9 +46,6 @@ const FILE_SIZE_LIMIT = 10 * 1024 * 1024; // 10MB
 
 // Requisitos do DeepSeek LLM 7B (10GB para arquivos do modelo, cache e offload)
 const MIN_DISK_SPACE = 10 * 1024 * 1024 * 1024;
-
-// Requisitos de memória mínimos (2GB RAM)
-const MIN_MEMORY = 2 * 1024 * 1024 * 1024;
 
 const steps = [
   'Upload Documents',
@@ -407,7 +403,7 @@ function RAGPipeline() {
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                 {status === 'downloading' ? 
                   'Downloading model files. This may take a while. Please ensure you have a stable internet connection.' :
-                  'Loading model into memory. This process uses disk offloading to optimize memory usage.'}
+                  'Loading model. This process uses disk offloading for efficient operation.'}
               </Typography>
             </Box>
           )}
@@ -671,92 +667,7 @@ function RAGPipeline() {
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Box display="flex" alignItems="center" justifyContent="space-between">
-                  <Box display="flex" alignItems="center">
-                    <MemoryIcon 
-                      sx={{ mr: 1 }} 
-                      color={systemStatus.memory.available < MIN_MEMORY ? 'error' : 'primary'} 
-                    />
-                    <Typography variant="subtitle1">DeepSeek LLM Memory</Typography>
-                  </Box>
-                  <Typography 
-                    variant="subtitle2" 
-                    color={memoryUsagePercent > 90 ? 'error.main' : 
-                           memoryUsagePercent > 80 ? 'warning.main' : 
-                           'primary.main'}
-                    sx={{ fontWeight: 'bold' }}
-                  >
-                    {memoryUsagePercent.toFixed(1)}% Used
-                  </Typography>
-                </Box>
-                <Box mt={2}>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                    <Typography variant="body2" color="text.secondary">
-                      Available Memory:
-                    </Typography>
-                    <Typography 
-                      variant="body2" 
-                      color={systemStatus.memory.available < MIN_MEMORY ? 'error.main' : 'success.main'}
-                      sx={{ fontWeight: 'medium' }}
-                    >
-                      {formatBytes(systemStatus.memory.available)}
-                      {systemStatus.memory.available < MIN_MEMORY && (
-                        <Typography 
-                          component="span" 
-                          color="error" 
-                          sx={{ ml: 1, fontSize: 'inherit', fontWeight: 'medium' }}
-                        >
-                          (Need {formatBytes(MIN_MEMORY - systemStatus.memory.available)} more)
-                        </Typography>
-                      )}
-                    </Typography>
-                  </Box>
-                  
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                    Required: 2 GB with disk offloading enabled
-                  </Typography>
-                  
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={memoryUsagePercent}
-                    color={memoryUsagePercent > 90 ? 'error' : 
-                           memoryUsagePercent > 80 ? 'warning' : 
-                           'primary'}
-                    sx={{ height: 8, borderRadius: 4, mb: 1 }}
-                  />
-                  
-                  <Typography variant="body2" color="text.secondary">
-                    {formatBytes(systemStatus.memory.used)} used of {formatBytes(systemStatus.memory.total)} total
-                  </Typography>
-                  
-                  {systemStatus.memory.available < MODEL_MEMORY && (
-                    <Alert 
-                      severity="error" 
-                      sx={{ mt: 2 }}
-                    >
-                      <AlertTitle>Insufficient Memory for DeepSeek LLM</AlertTitle>
-                      <Typography variant="body2" sx={{ mb: 0.5 }}>
-                        The model is configured to use disk offloading to minimize memory usage:
-                      </Typography>
-                      <Typography variant="body2" component="div" sx={{ pl: 2 }}>
-                        • Model weights are offloaded to disk when not in use<br />
-                        • Only 2GB of RAM required (instead of 14GB)<br />
-                        • Please close unused applications to free up memory
-                      </Typography>
-                    </Alert>
-                  )}
-                  {systemStatus.cpu && (
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                      CPU Usage: {systemStatus.cpu.usage.toFixed(1)}% ({systemStatus.cpu.count} cores)
-                    </Typography>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
+
 
           {/* Directories Status */}
           <Grid item xs={12}>

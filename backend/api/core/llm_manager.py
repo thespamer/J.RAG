@@ -1,6 +1,5 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
-from transformers.utils.hub import init_empty_weights
-from accelerate import load_checkpoint_and_dispatch
+from accelerate import infer_auto_device_map
 from huggingface_hub import snapshot_download, hf_hub_download
 from tqdm import tqdm
 import logging
@@ -87,26 +86,44 @@ class LLMManager:
 
     def load_model_manually(self) -> None:
         """Manual loading approach with memory optimization"""
-        config = AutoConfig.from_pretrained("deepseek-ai/deepseek-llm-7b-base")
-        
-        # Initialize empty model
-        with init_empty_weights():
-            self.model = AutoModelForCausalLM.from_config(config)
-        
-        # Preparar argumentos para o carregamento
-        load_args = {
-            "device_map": "auto"
-        }
-        
-        if self.memory_manager:
-            load_args["offload_folder"] = self.memory_manager.offload_dir
-        
-        # Load checkpoint with device mapping
-        self.model = load_checkpoint_and_dispatch(
-            self.model,
-            "deepseek-ai/deepseek-llm-7b-base",
-            **load_args
-        )
+        try:
+            # First try loading with device_map="cpu"
+            logger.info("Attempting to load model with CPU device map...")
+            load_args = {
+                "device_map": "cpu",
+                "low_cpu_mem_usage": True
+            }
+            
+            if self.memory_manager:
+                load_args.update({
+                    "offload_folder": self.memory_manager.offload_dir,
+                    "cache_dir": self.memory_manager.cache_dir
+                })
+            
+            self.model = AutoModelForCausalLM.from_pretrained(
+                "deepseek-ai/deepseek-llm-7b-base",
+                **load_args
+            )
+            
+            logger.info("Successfully loaded model with CPU device map")
+            
+        except Exception as e:
+            logger.error(f"Failed to load model with CPU device map: {e}")
+            logger.info("Falling back to auto device map with disk offload...")
+            
+            # Try with auto device map and disk offload
+            load_args = {
+                "device_map": "auto",
+                "low_cpu_mem_usage": True
+            }
+            
+            if self.memory_manager:
+                load_args["offload_folder"] = self.memory_manager.offload_dir
+            
+            self.model = AutoModelForCausalLM.from_pretrained(
+                "deepseek-ai/deepseek-llm-7b-base",
+                **load_args
+            )
 
     def generate_response(self, message: str, context: Optional[Dict[str, Any]] = None) -> str:
         """Generate response using the LLM"""
@@ -193,16 +210,22 @@ class LLMManager:
             return False
     
     def _download_model(self) -> None:
-        """Download do modelo usando snapshot_download para otimizar memória"""
+        """Download do modelo usando abordagem manual para evitar problemas de permissão"""
         try:
             if self.memory_manager:
-                # Usar snapshot_download para baixar apenas os arquivos sem carregar o modelo
+                # Configurar variáveis de ambiente para evitar avisos e problemas de permissão
+                os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
+                os.environ['HF_HUB_DISABLE_EXPERIMENTAL_WARNING'] = '1'
+                os.environ['HF_HUB_DISABLE_IMPLICIT_TOKEN'] = '1'
+                os.environ['DISABLE_TELEMETRY'] = '1'
+
+                # Usar snapshot_download com configurações otimizadas
                 snapshot_download(
                     "deepseek-ai/deepseek-llm-7b-base",
                     cache_dir=self.memory_manager.cache_dir,
                     local_files_only=False,
                     resume_download=True,
-                    use_safetensors=True
+                    local_dir_use_symlinks=False
                 )
                 logger.info("Model downloaded successfully using snapshot_download")
             else:
