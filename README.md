@@ -135,55 +135,161 @@ sequenceDiagram
 ### Diagrama de Rotas da API
 ```mermaid
 graph TB
-    subgraph Endpoints
-        H[/health/]:::health
-        
-        subgraph Dashboard
-            D[/dashboard/stats/]:::dashboard
+    subgraph API[Endpoints da API]
+        subgraph Sistema[Sistema]
+            subgraph ModelManagement[Gerenciamento do Modelo]
+                %% Carregamento em duas etapas
+                M1[/model/load/cpu/]:::memory
+                M2[/model/load/offload/]:::memory
+                M3[/model/status/]:::memory
+                M1 --> M2: Fallback
+                M2 --> M3: Status
+
+                %% Configurações de Otimização
+                M4[/model/config/memory/]:::memory
+                M5[/model/config/offload/]:::memory
+                M4 --> M1
+                M4 --> M2
+            end
+
+            subgraph CacheManagement[Gerenciamento de Cache]
+                %% Verificação e Limpeza
+                C1[/cache/verify/space/]:::cache
+                C2[/cache/cleanup/corrupted/]:::cache
+                C3[/cache/cleanup/offload/]:::cache
+                C1 --> C2 --> C3
+            end
+
+            subgraph Recovery[Recuperação]
+                %% Download e Verificação
+                R1[/recovery/download/]:::recovery
+                R2[/recovery/verify/]:::recovery
+                R3[/recovery/repair/]:::recovery
+                R1 --> R2 --> R3
+            end
         end
-        
-        subgraph RAG
-            R1[/rag/validate/]:::rag
-            R2[/rag/upload/]:::rag
-            R3[/rag/query/]:::rag
-        end
-        
-        subgraph Sistema
-            S1[/system/status/]:::system
-            S2[/system/config/]:::system
-            S3[/system/cache/cleanup/]:::system
-        end
-        
-        subgraph Workflows
+
+        subgraph Core[Core]
+            %% Pipeline RAG
+            RAG1[/rag/validate/]:::rag
+            RAG2[/rag/upload/]:::rag
+            RAG3[/rag/query/]:::rag
+            RAG1 --> RAG2 --> RAG3
+
+            %% Workflows
             W1[/workflows/]:::workflow
-            W2[/workflows/{id}/]:::workflow
-        end
-        
-        subgraph Prompts
+            W2[/workflows/{id}/execute/]:::workflow
+            W1 --> W2
+
+            %% Prompts
             P1[/prompts/]:::prompt
             P2[/prompts/execute/]:::prompt
+            P1 --> P2
+
+            %% Agentes
+            A1[/agents/]:::agent
+            A2[/agents/{id}/execute/]:::agent
+            A1 --> A2
         end
-        
-        subgraph Agentes
-            AG1[/agents/]:::agent
-            AG2[/agents/{id}/]:::agent
-            AG3[/agents/{id}/execute/]:::agent
-        end
-        
-        subgraph Analytics
-            AN1[/analytics/usage/]:::analytics
-            AN2[/analytics/performance/]:::analytics
+
+        subgraph Monitor[Monitoramento]
+            %% Status e Analytics
+            ST1[/system/status/]:::system
+            ST2[/system/metrics/]:::system
+            ST3[/system/health/]:::system
+            ST1 --> ST2 --> ST3
         end
     end
-    
-    classDef health fill:#97E49C,stroke:#333
-    classDef dashboard fill:#FFB366,stroke:#333
-    classDef rag fill:#FF99CC,stroke:#333
-    classDef system fill:#99CCFF,stroke:#333
-    classDef workflow fill:#CC99FF,stroke:#333
-    classDef prompt fill:#FF99FF,stroke:#333
-    classDef agent fill:#FFFF99,stroke:#333
-    classDef analytics fill:#99FFCC,stroke:#333
+
+    %% Fluxos Principais
+    ModelManagement --> Core: Modelo Carregado
+    CacheManagement --> ModelManagement: Otimização
+    Recovery --> ModelManagement: Recuperação
+
+    %% Fluxos de Monitoramento
+    ModelManagement --> Monitor: Status
+    CacheManagement --> Monitor: Métricas
+    Core --> Monitor: Saúde
+
+    %% Fluxos de Execução
+    W1 --> RAG2: Processamento
+    P2 --> RAG3: Consulta
+    A2 --> P2: Execução
+
+    classDef memory fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
+    classDef cache fill:#B0E0E6,stroke:#4682B4,stroke-width:2px
+    classDef recovery fill:#FFA07A,stroke:#8B0000,stroke-width:2px
+    classDef rag fill:#DDA0DD,stroke:#8B008B,stroke-width:2px
+    classDef workflow fill:#FFB6C1,stroke:#FF69B4,stroke-width:2px
+    classDef prompt fill:#E6E6FA,stroke:#483D8B,stroke-width:2px
+    classDef agent fill:#F08080,stroke:#CD5C5C,stroke-width:2px
+    classDef system fill:#98FB98,stroke:#006400,stroke-width:2px
+
+    style API fill:#f5f5f5,stroke:#333,stroke-width:2px
+    style Sistema fill:#f8f8f8,stroke:#666,stroke-width:1px
+    style Core fill:#f0f0f0,stroke:#666,stroke-width:1px
+    style Monitor fill:#f0f8ff,stroke:#666,stroke-width:1px
+```
+
+### Variáveis de Ambiente
+
+O sistema utiliza as seguintes variáveis de ambiente para otimizar o carregamento do modelo:
+
+```bash
+# Desativa avisos e locks
+HF_HUB_DISABLE_SYMLINKS_WARNING=1
+HF_HUB_DISABLE_EXPERIMENTAL_WARNING=1
+HF_HUB_DISABLE_IMPLICIT_TOKEN=1
+DISABLE_TELEMETRY=1
+
+# Configurações de Otimização
+LOW_CPU_MEM_USAGE=true
+USE_SAFETENSORS=true
+DEVICE_MAP=auto
+```
+
+Estas variáveis são essenciais para:
+1. Contornar problemas de permissão com arquivos de lock
+2. Otimizar o uso de memória durante o carregamento do modelo
+3. Configurar o offload automático quando necessário
+
+    classDef health fill:#98FB98,stroke:#006400,stroke-width:2px
+    classDef memory fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
+    classDef cache fill:#B0E0E6,stroke:#4682B4,stroke-width:2px
+    classDef system fill:#F0E68C,stroke:#DAA520,stroke-width:2px
+    classDef rag fill:#DDA0DD,stroke:#8B008B,stroke-width:2px
+    classDef workflow fill:#FFB6C1,stroke:#FF69B4,stroke-width:2px
+    classDef prompt fill:#E6E6FA,stroke:#483D8B,stroke-width:2px
+    classDef agent fill:#F08080,stroke:#CD5C5C,stroke-width:2px
+    classDef analytics fill:#98D8C8,stroke:#2F4F4F,stroke-width:2px
+    classDef recovery fill:#FFA07A,stroke:#8B0000,stroke-width:2px
+
+    style API fill:#f5f5f5,stroke:#333,stroke-width:2px
+    style Sistema fill:#f8f8f8,stroke:#666,stroke-width:1px
+
+    subgraph Dashboard[Dashboard]
+        subgraph ModelStatus[Status do Modelo]
+            D1[/dashboard/model/status/]:::dashboard
+            D2[/dashboard/model/memory/]:::dashboard
+            D3[/dashboard/model/disk/]:::dashboard
+            D1 --> D2
+            D2 --> D3
+        end
+
+        subgraph SystemStats[Estatísticas]
+            D4[/dashboard/stats/system/]:::dashboard
+            D5[/dashboard/stats/cache/]:::dashboard
+            D6[/dashboard/stats/performance/]:::dashboard
+        end
+    end
+
+    %% Conexões do Dashboard com Sistema
+    ModelStatus --> Memory: Monitoramento
+    ModelStatus --> Cache: Verificação
+    SystemStats --> Status: Métricas
+    SystemStats --> Analytics: Desempenho
+
+    classDef dashboard fill:#87CEEB,stroke:#4682B4,stroke-width:2px
 ```
 
 ### Diagrama de Otimização de Memória e Disco
