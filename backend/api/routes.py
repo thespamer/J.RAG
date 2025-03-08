@@ -75,11 +75,42 @@ def model_status():
 @api.route('/system/status', methods=['GET'])
 def get_system_status():
     try:
-        status = system_manager.get_system_status()
+        # Obter status do sistema
+        system_status = system_manager.get_system_status()
+        
+        # Obter status do modelo
+        model_status = llm_manager.get_model_status()
+        
+        # Obter informações de memória e cache
+        if memory_manager:
+            memory_info = memory_manager.get_memory_usage()
+            has_resources, available_gb = memory_manager.check_available_memory()
+        else:
+            memory_info = {}
+            has_resources, available_gb = False, 0
+        
+        # Combinar todas as informações
+        status = {
+            **system_status,
+            'model': {
+                **model_status,
+                'has_resources': has_resources,
+                'available_gb': available_gb
+            },
+            'memory': memory_info
+        }
+        
         return jsonify(status)
     except Exception as e:
         logger.error(f"Error getting system status: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'error': str(e),
+            'status': 'error',
+            'model': {
+                'status': 'error',
+                'error': str(e)
+            }
+        }), 500
 
 @api.route('/system/config', methods=['GET', 'POST'])
 def system_config():
@@ -147,6 +178,24 @@ def workflow(workflow_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@api.route('/workflows/<workflow_id>/execute', methods=['POST'])
+def execute_workflow(workflow_id):
+    try:
+        workflow = workflow_manager.get_workflow(workflow_id)
+        if not workflow:
+            return jsonify({"error": "Workflow not found"}), 404
+            
+        data = request.json
+        result = workflow_manager.execute_workflow(
+            workflow_id=workflow_id,
+            input_data=data.get('input', {}),
+            context=data.get('context', {})
+        )
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"Error executing workflow {workflow_id}: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 # Prompt Studio routes
 @api.route('/prompts', methods=['GET', 'POST'])
 def prompts():
@@ -159,6 +208,21 @@ def prompts():
             prompt = llm_manager.save_prompt(data)
             return jsonify(prompt), 201
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@api.route('/prompt/generate', methods=['POST'])
+def generate_prompt():
+    try:
+        data = request.json
+        result = llm_manager.generate_response(
+            message=data.get('prompt'),
+            context=data.get('context', {}),
+            max_length=data.get('max_length', 1000),
+            temperature=data.get('temperature', 0.7)
+        )
+        return jsonify({"response": result}), 200
+    except Exception as e:
+        logger.error(f"Error generating prompt: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @api.route('/prompts/execute', methods=['POST'])
@@ -281,14 +345,44 @@ def upload_document():
                 'details': 'Files must have valid filenames'
             }), 400
         
-        # Verificar espaço em disco
-        disk_space = system_manager.get_disk_space()
-        if disk_space['free'] < 10 * 1024 * 1024 * 1024:  # 10GB mínimo
+        # Verificar recursos do sistema
+        system_status = system_manager.get_system_status()
+        disk_space = system_status.get('diskSpace', {})
+        memory_info = system_status.get('memory', {})
+        
+        # Verificar espaço em disco (mínimo 10GB)
+        if disk_space.get('available', 0) < 10 * 1024 * 1024 * 1024:
             logger.error("Insufficient disk space")
-            return jsonify({
-                'error': 'Insufficient disk space',
-                'details': 'Need at least 10GB of free space'
-            }), 507
+            memory_manager.clean_corrupted_cache()  # Tentar liberar espaço
+            
+            # Verificar novamente após limpeza
+            system_status = system_manager.get_system_status()
+            disk_space = system_status.get('diskSpace', {})
+            
+            if disk_space.get('available', 0) < 10 * 1024 * 1024 * 1024:
+                return jsonify({
+                    'error': 'Insufficient disk space',
+                    'details': 'Need at least 10GB of free space. Please clean up disk space and try again.',
+                    'available': disk_space.get('available', 0),
+                    'required': 10 * 1024 * 1024 * 1024
+                }), 507
+        
+        # Verificar memória disponível (mínimo 4GB)
+        if memory_info.get('available', 0) < 4 * 1024 * 1024 * 1024:
+            logger.warning("Low memory available")
+            memory_manager.clean_corrupted_cache()  # Tentar liberar memória
+            
+            # Verificar novamente após limpeza
+            system_status = system_manager.get_system_status()
+            memory_info = system_status.get('memory', {})
+            
+            if memory_info.get('available', 0) < 4 * 1024 * 1024 * 1024:
+                return jsonify({
+                    'error': 'Insufficient memory',
+                    'details': 'System is low on memory. Processing may be affected.',
+                    'available': memory_info.get('available', 0),
+                    'recommended': 4 * 1024 * 1024 * 1024
+                }), 507
         
         # Processar documentos
         logger.info(f"Starting document processing for {len(files)} files")
@@ -333,6 +427,36 @@ def query_documents():
                 "error": "Missing required field",
                 "details": "Field 'query' is required"
             }), 400
+            
+        # Verificar status do modelo
+        model_status = llm_manager.get_model_status()
+        if model_status.get('status') != 'ready':
+            return jsonify({
+                "error": "Model not ready",
+                "details": f"Model is currently {model_status.get('status')}. Please wait until the model is ready.",
+                "model_status": model_status
+            }), 503
+            
+        # Verificar recursos do sistema
+        system_status = system_manager.get_system_status()
+        memory_info = system_status.get('memory', {})
+        
+        # Verificar memória disponível (mínimo 2GB para queries)
+        if memory_info.get('available', 0) < 2 * 1024 * 1024 * 1024:
+            logger.warning("Low memory for query processing")
+            memory_manager.clean_corrupted_cache()  # Tentar liberar memória
+            
+            # Verificar novamente após limpeza
+            system_status = system_manager.get_system_status()
+            memory_info = system_status.get('memory', {})
+            
+            if memory_info.get('available', 0) < 2 * 1024 * 1024 * 1024:
+                return jsonify({
+                    'error': 'Insufficient memory',
+                    'details': 'System is low on memory. Please try again later.',
+                    'available': memory_info.get('available', 0),
+                    'recommended': 2 * 1024 * 1024 * 1024
+                }), 507
         
         # Executar query
         logger.info("Executing RAG query")

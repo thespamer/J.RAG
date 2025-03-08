@@ -1,0 +1,23 @@
+# Dependências principais - Otimizadas para testes
+torch==2.0.0
+transformers==4.30.0
+accelerate==0.20.0
+safetensors==0.3.1
+
+# Utilitários mínimos
+psutil==5.9.0
+numpy==1.24.0
+tqdm==4.65.0
+huggingface-hub==0.16.4
+
+# API e ambiente
+flask==2.0.0
+flask-cors==4.0.0
+python-dotenv==1.0.0
+
+# Parâmetros de ambiente para otimizações
+# USE_SAFETENSORS=1
+# TOKENIZERS_PARALLELISM=false
+# HF_HUB_DISABLE_TELEMETRY=1
+# TRANSFORMERS_OFFLINE=1
+# low_cpu_mem_usage=True

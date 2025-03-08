@@ -24,8 +24,7 @@ import {
   LinearProgress,
   Tooltip,
   Card,
-  CardContent,
-  Divider
+  CardContent
 } from '@mui/material';
 import {
   Upload as UploadIcon,
@@ -33,19 +32,12 @@ import {
   Delete as DeleteIcon,
   Settings as SettingsIcon,
   Error as ErrorIcon,
-  CheckCircle as CheckCircleIcon,
-  Storage as StorageIcon,
-  Folder as FolderIcon,
-  Warning as WarningIcon,
-  CleaningServices as CleaningServicesIcon
+  CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
 import axios from '../../services/axios';
 
 const SUPPORTED_TYPES = ['.pdf', '.txt', '.doc', '.docx'];
 const FILE_SIZE_LIMIT = 10 * 1024 * 1024; // 10MB
-
-// Requisitos do DeepSeek LLM 7B (10GB para arquivos do modelo, cache e offload)
-const MIN_DISK_SPACE = 10 * 1024 * 1024 * 1024;
 
 const steps = [
   'Upload Documents',
@@ -80,110 +72,35 @@ function RAGPipeline() {
   const [uploadProgress, setUploadProgress] = React.useState({});
   const [processingStatus, setProcessingStatus] = React.useState({});
   const [systemStatus, setSystemStatus] = React.useState({
-    disk_space: { available: 0, total: 0, used: 0, warnings: [] },
-    cpu: { usage: 0, count: 0 },
     model: {
       status: 'unknown',
       downloadProgress: 0,
       loadProgress: 0,
       error: null
-    },
-    warnings: [],
-    errors: [],
-    directories: {},
-    lastCleanup: null
+    }
   });
-  const [cleaningSystem, setCleaningSystem] = React.useState(false);
-  const [cleanupError, setCleanupError] = React.useState('');
 
   React.useEffect(() => {
     // Fetch system status periodically
     const fetchSystemStatus = async () => {
       try {
         const response = await axios.get('/health');
-        if (response.data.system) {
-          const systemData = response.data.system;
-          
-          // Verificar se os dados são válidos
-          if (!systemData.disk_space) {
-            throw new Error('Invalid system status data received');
-          }
-          
-          // Garantir que todos os campos necessários existem
-          const disk_space = {
-            total: systemData.disk_space.total || 0,
-            used: systemData.disk_space.used || 0,
-            available: systemData.disk_space.available || 0,
-            percent_used: systemData.disk_space.percent_used || 0,
-            warnings: systemData.disk_space.warnings || [],
-            error: systemData.disk_space.error || null
-          };
-          
-          // Verificar se os valores são válidos
-          if (disk_space.total === 0) {
-            throw new Error('Invalid disk space values');
-          }
-          
-          // Consolidar todos os erros e avisos
-          const allErrors = [];
-          const allWarnings = [];
-          
-          // Adicionar erros e avisos do disco
-          if (disk_space.error) {
-            allErrors.push(disk_space.error);
-          }
-          allWarnings.push(...disk_space.warnings);
-          
-          // Adicionar erros e avisos gerais do sistema
-          if (systemData.errors?.length > 0) {
-            allErrors.push(...systemData.errors);
-          }
-          if (systemData.warnings?.length > 0) {
-            allWarnings.push(...systemData.warnings);
-          }
-          
-          // Verificar se houve erro durante a limpeza
-          if (cleaningSystem && systemData.cleanup_error) {
-            allErrors.push(systemData.cleanup_error);
-            setCleanupError(systemData.cleanup_error);
-          }
-          
-          // Verificar se a limpeza foi bem-sucedida
-          if (cleaningSystem && systemData.cleanup_success) {
-            allWarnings.push(systemData.cleanup_success);
-            setCleanupError('');
-            setCleaningSystem(false);
-          }
-          
-          // Remover duplicatas e atualizar o estado
+        if (response.data.system?.model) {
           setSystemStatus({
-            disk_space,
-            cpu: systemData.cpu || { usage: 0, count: 0 },
-            model: systemData.model || {
-              status: 'unknown',
-              downloadProgress: 0,
-              loadProgress: 0,
-              error: null
-            },
-            warnings: Array.from(new Set(allWarnings)),
-            errors: Array.from(new Set(allErrors)),
-            directories: systemData.directories || {},
-            lastCleanup: systemData.lastCleanup
+            model: response.data.system.model
           });
         }
       } catch (error) {
         console.error('Error fetching system status:', error);
         const errorMessage = error.response?.data?.error || error.message || 'Failed to fetch system status';
-        setSystemStatus(prev => ({
-          ...prev,
-          errors: Array.from(new Set([...prev.errors, errorMessage]))
-        }));
-        
-        // Se houver erro durante a limpeza, atualizar estado
-        if (cleaningSystem) {
-          setCleanupError(errorMessage);
-          setCleaningSystem(false);
-        }
+        setSystemStatus({
+          model: {
+            status: 'error',
+            error: errorMessage,
+            downloadProgress: 0,
+            loadProgress: 0
+          }
+        });
       }
     };
 
@@ -192,43 +109,6 @@ function RAGPipeline() {
     return () => clearInterval(interval);
   }, []);
 
-  const validateSystemResources = () => {
-    const errors = [];
-    
-    // Verificar se temos dados válidos do sistema
-    if (!systemStatus.disk_space) {
-      errors.push('Unable to verify system resources. System status data is not available.');
-      return errors;
-    }
-    
-    // Verificar espaço em disco para o modelo DeepSeek LLM 7B
-    if (systemStatus.disk_space.available < MIN_DISK_SPACE) {
-      errors.push(
-        `Insufficient disk space for DeepSeek LLM 7B.\n` +
-        `Available: ${formatBytes(systemStatus.disk_space.available)}\n` +
-        `Required: ${formatBytes(MIN_DISK_SPACE)} (10GB for model files, cache and offload)\n` +
-        `Total: ${formatBytes(systemStatus.disk_space.total)}\n` +
-        `Used: ${formatBytes(systemStatus.disk_space.used)}\n\n` +
-        `Please clean up unused files to free up disk space.`
-      );
-    }
-    
-    // Verificar avisos do sistema
-    if (systemStatus.warnings?.length > 0) {
-      errors.push(
-        `System Warnings:\n${systemStatus.warnings.map(w => `• ${w}`).join('\n')}`
-      );
-    }
-    
-    // Verificar erros do sistema
-    if (systemStatus.errors?.length > 0) {
-      errors.push(
-        `System Errors:\n${systemStatus.errors.map(e => `• ${e.message || e}`).join('\n')}`
-      );
-    }
-    
-    return errors;
-  };
 
   const validateFile = (file) => {
     const errors = [];
@@ -282,65 +162,11 @@ function RAGPipeline() {
     });
   };
 
-  const formatBytes = (bytes) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-  };
 
-  const handleCleanup = async () => {
-    try {
-      setCleaningSystem(true);
-      setCleanupError('');
-      
-      // Tentar limpar o sistema
-      const cleanupResponse = await axios.post('/system/cleanup');
-      if (cleanupResponse.data.error) {
-        throw new Error(cleanupResponse.data.error);
-      }
-      
-      // Forçar atualização imediata do status
-      const response = await axios.get('/health');
-      if (response.data.system) {
-        const { disk_space } = response.data.system;
-        if (!disk_space) {
-          throw new Error('Invalid system status data received');
-        }
-        
-        setSystemStatus(prev => ({
-          ...prev,
-          disk_space: {
-            total: disk_space.total || 0,
-            used: disk_space.used || 0,
-            available: disk_space.available || 0,
-            percent_used: disk_space.percent_used || 0,
-            warnings: disk_space.warnings || []
-          }
-        }));
-      }
-    } catch (error) {
-      console.error('Error cleaning system:', error);
-      setCleanupError(
-        error.response?.data?.error ||
-        error.response?.data?.message ||
-        error.message ||
-        'An unexpected error occurred while cleaning the system'
-      );
-    } finally {
-      setCleaningSystem(false);
-    }
-  };
 
-  const getStatusColor = (available, minimum) => {
-    // Verificar se temos espaço suficiente para o DeepSeek LLM
-    if (available < minimum) return 'error';
-    
-    // Ser mais conservador devido aos arquivos temporários
-    if (available < minimum * 1.5) return 'warning'; // Menos de 15GB livre
-    return available < minimum * 2 ? 'primary' : 'success'; // Menos de 20GB livre
-  };
+
+
+
 
   const renderModelStatus = () => {
     const { status, download_progress, error } = systemStatus.model;
@@ -403,7 +229,7 @@ function RAGPipeline() {
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                 {status === 'downloading' ? 
                   'Downloading model files. This may take a while. Please ensure you have a stable internet connection.' :
-                  'Loading model. This process uses disk offloading for efficient operation.'}
+                  'Loading model. Please wait while the model is being initialized.'}
               </Typography>
             </Box>
           )}
@@ -420,284 +246,9 @@ function RAGPipeline() {
   };
 
   const renderSystemStatus = () => {
-    // Calcular porcentagem de uso do disco
-    const diskUsagePercent = systemStatus.disk_space.percent_used || (systemStatus.disk_space.used / systemStatus.disk_space.total * 100) || 0;
-    
-    // Verificar se o espaço em disco é suficiente para o DeepSeek LLM
-    const diskColor = getStatusColor(systemStatus.disk_space.available, MIN_DISK_SPACE);
-    
     return (
       <Box sx={{ mt: 2 }}>
-        {/* Alertas do sistema */}
-        {systemStatus.errors?.length > 0 && (
-          <Alert 
-            severity="error" 
-            sx={{ mb: 2 }}
-          >
-            <AlertTitle>System Errors</AlertTitle>
-            <List dense disablePadding>
-              {Array.from(new Set(systemStatus.errors)).map((error, index) => {
-                const errorMessage = typeof error === 'string' ? error : 
-                  error.message || error.error || error.detail || 
-                  (error.response?.data?.error || error.response?.data?.message) || 
-                  'Unknown error';
-                return (
-                  <ListItem key={index} disablePadding>
-                    <ListItemIcon sx={{ minWidth: 24 }}>
-                      <ErrorIcon color="error" fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary={errorMessage}
-                      sx={{ '& .MuiTypography-root': { wordBreak: 'break-word' } }}
-                    />
-                  </ListItem>
-                );
-              })}
-            </List>
-          </Alert>
-        )}
-        
-        {systemStatus.warnings?.length > 0 && (
-          <Alert 
-            severity="warning" 
-            sx={{ mb: 2 }}
-          >
-            <AlertTitle>System Warnings</AlertTitle>
-            <List dense disablePadding>
-              {Array.from(new Set(systemStatus.warnings)).map((warning, index) => {
-                const warningMessage = typeof warning === 'string' ? warning :
-                  warning.message || warning.warning || warning.detail || 'Unknown warning';
-                return (
-                  <ListItem key={index} disablePadding>
-                    <ListItemIcon sx={{ minWidth: 24 }}>
-                      <WarningIcon color="warning" fontSize="small" />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary={warningMessage}
-                      sx={{ '& .MuiTypography-root': { wordBreak: 'break-word' } }}
-                    />
-                  </ListItem>
-                );
-              })}
-            </List>
-          </Alert>
-        )}
-        
-        {/* Alerta de erro na limpeza do sistema */}
-        {cleanupError && (
-          <Alert 
-            severity="error" 
-            sx={{ mb: 2 }}
-            onClose={() => setCleanupError('')}
-          >
-            <AlertTitle>Error Cleaning System</AlertTitle>
-            {cleanupError}
-          </Alert>
-        )}
-
-        {/* Alerta de recursos insuficientes */}
-        {systemStatus.disk_space.available < MIN_DISK_SPACE && (
-          <Alert 
-            severity="error"
-            action={
-              systemStatus.disk_space.available < MIN_DISK_SPACE && (
-                <Button
-                  variant="contained"
-                  size="small"
-                  color="error"
-                  onClick={handleCleanup}
-                  startIcon={<CleaningServicesIcon />}
-                >
-                  Clean System
-                </Button>
-              )
-            }
-            sx={{ mb: 2 }}
-          >
-            <AlertTitle>DeepSeek LLM System Requirements Not Met</AlertTitle>
-            <Box sx={{ mb: 1 }}>
-              <Typography variant="subtitle2" color="error.dark" sx={{ mb: 1 }}>
-                The DeepSeek LLM 7B model requires disk space for model files, cache, and offload storage:
-              </Typography>
-              <List dense>
-                <ListItem>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    <StorageIcon fontSize="small" color={systemStatus.disk_space.available < MIN_DISK_SPACE ? 'error' : 'success'} />
-                  </ListItemIcon>
-                  <ListItemText 
-                    primary={`10GB of free disk space for model files and cache`}
-                    secondary={
-                      systemStatus.disk_space.available < MIN_DISK_SPACE ? 
-                      `Available: ${formatBytes(systemStatus.disk_space.available)} (Need ${formatBytes(MIN_DISK_SPACE - systemStatus.disk_space.available)} more)` : 
-                      'Requirement met'
-                    }
-                  />
-                </ListItem>
-              </List>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                color="error"
-                disabled={cleaningSystem}
-                onClick={handleCleanup}
-                startIcon={cleaningSystem ? <CircularProgress size={16} /> : <CleaningServicesIcon />}
-              >
-                {cleaningSystem ? 'Cleaning...' : 'Clean System'}
-              </Button>
-              <Button 
-                color="inherit" 
-                size="small"
-                onClick={() => window.open('https://docs.codeium.com/q-rag/requirements', '_blank')}
-              >
-                Learn More
-              </Button>
-            </Box>
-          </Alert>
-        )}
-        
-        <Typography variant="h6" gutterBottom>
-          System Status
-        </Typography>
         <Grid container spacing={2}>
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Box display="flex" alignItems="center" justifyContent="space-between">
-                  <Box display="flex" alignItems="center">
-                    <StorageIcon 
-                      sx={{ mr: 1 }} 
-                      color={systemStatus.disk_space.available < MIN_DISK_SPACE ? 'error' : 'primary'} 
-                    />
-                    <Typography variant="subtitle1">DeepSeek LLM Storage</Typography>
-                  </Box>
-                  <Typography 
-                    variant="subtitle2" 
-                    color={diskUsagePercent > 90 ? 'error.main' : 
-                           diskUsagePercent > 80 ? 'warning.main' : 
-                           'primary.main'}
-                    sx={{ fontWeight: 'bold' }}
-                  >
-                    {diskUsagePercent.toFixed(1)}% Used
-                  </Typography>
-                </Box>
-                <Box mt={2}>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                    <Typography variant="body2" color="text.secondary">
-                      Available Space:
-                    </Typography>
-                    <Typography 
-                      variant="body2" 
-                      color={systemStatus.disk_space.available < MIN_DISK_SPACE ? 'error.main' : 'success.main'}
-                      sx={{ fontWeight: 'medium' }}
-                    >
-                      {formatBytes(systemStatus.disk_space.available)}
-                      {systemStatus.disk_space.available < MIN_DISK_SPACE && (
-                        <Typography 
-                          component="span" 
-                          color="error" 
-                          sx={{ ml: 1, fontSize: 'inherit', fontWeight: 'medium' }}
-                        >
-                          (Need {formatBytes(MIN_DISK_SPACE - systemStatus.disk_space.available)} more)
-                        </Typography>
-                      )}
-                    </Typography>
-                  </Box>
-                  
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                    Required: 10 GB for model files, cache, and disk offload storage
-                  </Typography>
-                  
-                  <LinearProgress 
-                    variant="determinate" 
-                    value={diskUsagePercent}
-                    color={diskUsagePercent > 90 ? 'error' : 
-                           diskUsagePercent > 80 ? 'warning' : 
-                           'primary'}
-                    sx={{ height: 8, borderRadius: 4, mb: 1 }}
-                  />
-                  
-                  <Typography variant="body2" color="text.secondary">
-                    {formatBytes(systemStatus.disk_space.used)} used of {formatBytes(systemStatus.disk_space.total)} total
-                  </Typography>
-                  
-                  {systemStatus.disk_space.available < MIN_DISK_SPACE && (
-                    <Alert 
-                      severity="error" 
-                      sx={{ mt: 2 }}
-                      action={
-                        <Button
-                          variant="contained"
-                          size="small"
-                          color="error"
-                          disabled={cleaningSystem}
-                          onClick={handleCleanup}
-                          startIcon={cleaningSystem ? <CircularProgress size={16} /> : <CleaningServicesIcon />}
-                        >
-                          {cleaningSystem ? 'Cleaning...' : 'Clean System'}
-                        </Button>
-                      }
-                    >
-                      <AlertTitle>Insufficient Space for DeepSeek LLM</AlertTitle>
-                      <Typography variant="body2" sx={{ mb: 0.5 }}>
-                        The model requires at least 10GB of free space for:
-                      </Typography>
-                      <Typography variant="body2" component="div" sx={{ pl: 2 }}>
-                        • Model files and cache storage<br />
-                        • Weight offloading during inference<br />
-                        • Temporary files during download
-                      </Typography>
-                    </Alert>
-                  )}
-                  
-                  {cleanupError && (
-                    <Alert severity="error" sx={{ mt: 2 }}>
-                      <AlertTitle>Error During Cleanup</AlertTitle>
-                      {cleanupError}
-                    </Alert>
-                  )}
-                  
-                  {systemStatus.lastCleanup && (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                      Last cleanup: {new Date(systemStatus.lastCleanup).toLocaleString()}
-                    </Typography>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-
-
-          {/* Directories Status */}
-          <Grid item xs={12}>
-            <Card>
-              <CardContent>
-                <Box display="flex" alignItems="center" mb={2}>
-                  <FolderIcon sx={{ mr: 1 }} />
-                  <Typography variant="subtitle1">System Directories</Typography>
-                </Box>
-                <Grid container spacing={2}>
-                  {systemStatus.directories && Object.entries(systemStatus.directories).map(([name, info]) => (
-                    <Grid item xs={12} sm={6} md={4} key={name}>
-                      <Box sx={{ mb: 2 }}>
-                        <Typography variant="subtitle2">
-                          {name.charAt(0).toUpperCase() + name.slice(1)}
-                        </Typography>
-                        <Typography variant="body2" color={info.exists ? 'text.secondary' : 'error'}>
-                          Status: {info.exists ? (info.writable ? 'Ready' : 'Read-only') : 'Not Found'}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>
-                          {info.path}
-                        </Typography>
-                      </Box>
-                    </Grid>
-                  ))}
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
-
           {/* Model Status */}
           <Grid item xs={12}>
             <Card>
@@ -711,7 +262,7 @@ function RAGPipeline() {
                         systemStatus.model.status === 'downloading' || systemStatus.model.status === 'loading' ? 'primary' : 
                         'action'} 
                     />
-                    <Typography variant="subtitle1">DeepSeek LLM Status</Typography>
+                    <Typography variant="subtitle1">Model Status</Typography>
                   </Box>
                   {systemStatus.model.status === 'ready' && (
                     <Tooltip title="Model is ready to use">
@@ -768,11 +319,6 @@ function RAGPipeline() {
                           This may take a while. Please ensure you have a stable internet connection.
                         </Typography>
                       )}
-                      {systemStatus.model.status === 'loading' && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                          Loading model into memory. This process uses disk offloading to optimize memory usage.
-                        </Typography>
-                      )}
                     </Box>
                   )}
                   
@@ -803,12 +349,6 @@ function RAGPipeline() {
     setError(null);
     
     try {
-      // Validar recursos do sistema
-      const systemErrors = validateSystemResources();
-      if (systemErrors.length > 0) {
-        throw new Error(systemErrors.join('\n'));
-      }
-
       // Validar os documentos
       const validateFormData = new FormData();
       files.forEach((file) => {

@@ -1,0 +1,23 @@
+services:
+  test:
+    build:
+      context: .
+      dockerfile: backend/tests/Dockerfile.test
+    volumes:
+      - ./backend:/app/backend:ro
+      - test_models_cache:/app/models_cache:rw
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONPATH=/app
+      - MODEL_CACHE_DIR=/app/models_cache
+      - MODEL_WEIGHTS_OFFLOAD_DIR=/app/models_cache/offload
+      - TRANSFORMERS_CACHE=/app/models_cache/transformers
+      - HF_HOME=/app/models_cache/huggingface
+      - TOKENIZERS_PARALLELISM=false
+      - HF_HUB_DISABLE_TELEMETRY=1
+      - TRANSFORMERS_VERBOSITY=error
+
+volumes:
+  test_models_cache:
+    driver: local

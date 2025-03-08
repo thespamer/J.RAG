@@ -96,107 +96,85 @@ class SystemManager:
                 # Verificar espaço no diretório models_cache que contém o modelo, cache e offload
                 path = os.path.join(self.base_path, 'models_cache')
             
-            # Verificar se o caminho existe
-            if not os.path.exists(path):
-                logger.error(f"Path does not exist: {path}")
+            # Obter informações do disco do volume montado
+            try:
+                # Primeiro tentar o caminho do container
+                if os.path.exists(path) and os.access(path, os.R_OK):
+                    total, used, free = shutil.disk_usage(path)
+                else:
+                    # Se falhar, tentar o caminho do host que está mapeado no volume
+                    host_path = os.path.join(os.environ.get('PWD', ''), 'models_cache')
+                    if os.path.exists(host_path) and os.access(host_path, os.R_OK):
+                        total, used, free = shutil.disk_usage(host_path)
+                    else:
+                        logger.error(f"Cannot access disk space info for {path} or {host_path}")
+                        return {
+                            'total': 0,
+                            'used': 0,
+                            'free': 0,
+                            'percent_used': 0,
+                            'available': 0,
+                            'warnings': [f"Cannot access disk space info"]
+                        }
+                
+                # Verificar se os valores são válidos
+                if total <= 0 or used < 0 or free < 0:
+                    logger.error(f"Invalid disk space values for {path}: total={total}, used={used}, free={free}")
+                    return {
+                        'total': 0,
+                        'used': 0,
+                        'free': 0,
+                        'percent_used': 0,
+                        'available': 0,
+                        'percent_available': 0,
+                        'warnings': [f"Invalid disk space values"]
+                    }
+                
+                # Verificar se há espaço suficiente para o modelo DeepSeek LLM 7B
+                warnings = []
+                if free < self.MODEL_DISK_SPACE:
+                    msg = f"Critical: Insufficient disk space for DeepSeek LLM. Need {(self.MODEL_DISK_SPACE - free) / (1024*1024*1024):.1f}GB more"
+                    logger.warning(msg)
+                    warnings.append(msg)
+                
                 return {
-                    'total': 0,
-                    'used': 0,
-                    'free': 0,
-                    'percent_used': 0,
-                    'available': 0,
-                    'error': f"Path does not exist: {path}"
+                    'total': total,
+                    'used': used,
+                    'free': free,
+                    'available': free,  # Usar o espaço livre como disponível
+                    'percent_used': (used / total) * 100 if total > 0 else 0,
+                    'percent_available': (free / total) * 100 if total > 0 else 0,
+                    'warnings': warnings
                 }
             
-            # Verificar se temos permissão para acessar o caminho
-            if not os.access(path, os.R_OK):
-                logger.error(f"No read permission for path: {path}")
-                return {
-                    'total': 0,
-                    'used': 0,
-                    'free': 0,
-                    'percent_used': 0,
-                    'available': 0,
-                    'error': f"No read permission for path: {path}"
-                }
-            
-            # Obter informações do disco
-            total, used, free = shutil.disk_usage(path)
-            
-            # Verificar se os valores são válidos
-            if total == 0:
-                logger.error(f"Invalid disk space values for path: {path}")
-                return {
-                    'total': 0,
-                    'used': 0,
-                    'free': 0,
-                    'percent_used': 0,
-                    'available': 0,
-                    'error': f"Invalid disk space values for path: {path}"
-                }
-            
-            # Usar o espaço disponível real sem subtrair reserva do sistema
-            # O sistema operacional já considera a reserva necessária
-            available = free
-            
-            # Verificar se há espaço suficiente para o modelo DeepSeek LLM 7B
-            if free < self.MODEL_DISK_SPACE:
-                logger.warning(f"Critical low disk space for DeepSeek LLM on {path}: only {free / (1024*1024*1024):.2f}GB free")
-            
-            return {
-                'total': total,
-                'used': used,
-                'free': free,
-                'available': available,
-                'percent_used': (used / total) * 100,
-                'percent_available': (available / total) * 100 if total > 0 else 0,
-                'warnings': [
-                    f'Critical: Insufficient disk space for DeepSeek LLM. Need {(self.MODEL_DISK_SPACE - free) / (1024*1024*1024):.1f}GB more' 
-                    if free < self.MODEL_DISK_SPACE else None
-                ] if free < self.MODEL_DISK_SPACE else []
-            }
-            
-        except OSError as e:
-            # OSError pode ocorrer quando o disco está muito cheio
-            error_msg = str(e)
-            if 'No space left on device' in error_msg:
-                logger.error(f"No space left on device {path}")
-                return {
-                    'total': 0,
-                    'used': 0,
-                    'free': 0,
-                    'available': 0,
-                    'percent_used': 100,
-                    'percent_available': 0,
-                    'error': 'No space left on device',
-                    'warnings': ['Critical: Disk is full']
-                }
-            else:
-                logger.error(f"OS error accessing disk space on {path}: {error_msg}")
-                return {
-                    'total': 0,
-                    'used': 0,
-                    'free': 0,
-                    'available': 0,
-                    'percent_used': 0,
-                    'percent_available': 0,
-                    'error': f"OS error: {error_msg}"
-                }
-            
-        except PermissionError as e:
-            logger.error(f"Permission denied accessing path {path}: {str(e)}")
-            return {
-                'total': 0,
-                'used': 0,
-                'free': 0,
-                'available': 0,
-                'percent_used': 0,
-                'percent_available': 0,
-                'error': f"Permission denied: {str(e)}"
-            }
+            except OSError as e:
+                # OSError pode ocorrer quando o disco está muito cheio
+                error_msg = str(e)
+                if 'No space left on device' in error_msg:
+                    logger.error(f"No space left on device {path}")
+                    return {
+                        'total': 0,
+                        'used': 0,
+                        'free': 0,
+                        'available': 0,
+                        'percent_used': 100,
+                        'percent_available': 0,
+                        'warnings': ['Critical: Disk is full']
+                    }
+                else:
+                    logger.error(f"OS error accessing disk space on {path}: {error_msg}")
+                    return {
+                        'total': 0,
+                        'used': 0,
+                        'free': 0,
+                        'available': 0,
+                        'percent_used': 0,
+                        'percent_available': 0,
+                        'warnings': [f"OS error: {error_msg}"]
+                    }
             
         except Exception as e:
-            logger.error(f"Error getting disk space for {path}: {str(e)}")
+            logger.error(f"Error getting disk space info: {e}")
             return {
                 'total': 0,
                 'used': 0,
@@ -204,9 +182,8 @@ class SystemManager:
                 'available': 0,
                 'percent_used': 0,
                 'percent_available': 0,
-                'error': str(e)
-            }
-    
+                'warnings': [f"Error getting disk space info: {e}"]
+            }    
     def get_memory_usage(self):
         """Get memory usage information"""
         try:

@@ -1,0 +1,76 @@
+FROM python:3.10-slim as builder
+
+WORKDIR /app
+
+# Instalar dependências essenciais com limpeza
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configurar pip para não usar cache e otimizar instalação
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=100
+
+# Copiar apenas os arquivos de requisitos primeiro
+COPY backend/requirements.txt backend/tests/requirements-test.txt ./
+
+# Instalar dependências com otimizações
+RUN python -m pip install --no-cache-dir --upgrade pip && \
+    python -m pip install --no-cache-dir -r requirements.txt -r requirements-test.txt && \
+    find /root/.cache /tmp /var/tmp -type f -delete 2>/dev/null || true
+
+# Estágio final otimizado
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Instalar utilitários necessários com limpeza
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    procps \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar ambiente Python do builder
+COPY --from=builder /usr/local/lib/python3.10/site-packages/ /usr/local/lib/python3.10/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
+
+# Copiar código fonte e script de inicialização
+COPY backend /app/backend
+COPY backend/tests/test_startup.sh /app/test_startup.sh
+RUN chmod +x /app/test_startup.sh
+
+# Configurar ambiente Python
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    # Caminhos do modelo
+    MODEL_CACHE_DIR=/app/models_cache \
+    MODEL_WEIGHTS_OFFLOAD_DIR=/app/models_cache/offload \
+    TRANSFORMERS_CACHE=/app/models_cache/transformers \
+    HF_HOME=/app/models_cache/huggingface \
+    # Configurações HuggingFace
+    TOKENIZERS_PARALLELISM=false \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    TRANSFORMERS_VERBOSITY=error \
+    # Configurações de teste
+    PYTEST_ADDOPTS='-v --cov=backend --cov-report=term-missing'
+
+# Criar diretórios com permissões adequadas
+RUN mkdir -p /app/models_cache/{offload,transformers,huggingface,temp} && \
+    chmod -R 777 /app/models_cache && \
+    # Limpar caches do sistema
+    rm -rf /root/.cache/* /tmp/* /var/tmp/* && \
+    # Criar arquivo de verificação de saúde
+    touch /app/health_check
+
+# Healthcheck para verificar o ambiente Python
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c 'import torch; print(torch.__version__)' || exit 1
+
+# Usar script de inicialização
+ENTRYPOINT ["/app/test_startup.sh"]

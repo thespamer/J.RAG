@@ -24,12 +24,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - TORCH_CUDA_ARCH_LIST=All
     env_file: .env
     volumes:
-      - ./backend/api:/app/api
-      - model_cache:/app/models_cache
-      - model_offload:/app/models_cache/offload
-      - uploads:/app/uploads
+      - ./backend:/app/backend:ro
+      - ./models_cache:/app/models_cache:rw
+      - ./uploads:/app/uploads:rw
+    tmpfs:
+      - /app/models_cache/offload:size=10G,mode=777,exec
+    shm_size: 2gb
     ports:
       - "8000:8000"
     depends_on:
@@ -38,15 +42,20 @@ services:
       resources:
         limits:
           memory: ${MAX_RAM_USAGE:-2G}
+          cpus: '1.5'
         reservations:
           memory: ${MIN_RAM_USAGE:-1G}
+          cpus: '0.5'
+    ulimits:
+      memlock: -1
+      stack: 67108864
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - FLASK_APP=app.py
       - FLASK_ENV=development
       - FLASK_DEBUG=1
-      - PYTHONPATH=/app/api
+      - PYTHONPATH=/app
       - MODEL_CACHE_DIR=/app/models_cache
       - MODEL_WEIGHTS_OFFLOAD_DIR=/app/models_cache/offload
       - HUGGINGFACE_CACHE=/app/models_cache/huggingface
@@ -54,13 +63,29 @@ services:
       - HF_HUB_CACHE=/app/models_cache/huggingface
       - HF_HOME=/app/models_cache/huggingface
       - SAFETENSORS_FAST_GPU=1
-      - OMP_NUM_THREADS=1
-      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
       - TRANSFORMERS_OFFLINE=0
+      - USE_SAFETENSORS=1
+      - TRANSFORMERS_OFFLINE=0
+      - TOKENIZERS_PARALLELISM=false
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+      - HF_HUB_DOWNLOAD_RETRY_COUNT=3
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
+      - TRANSFORMERS_CACHE=/app/models_cache
+      - HF_HOME=/app/models_cache
+      - TRANSFORMERS_VERBOSITY=error
       - HF_HUB_DISABLE_TELEMETRY=1
-      - HF_HUB_DISABLE_SYMLINKS_WARNING=1
-      - HF_HUB_DISABLE_EXPERIMENTAL_WARNING=1
-      - HF_HUB_DISABLE_IMPLICIT_TOKEN=1
+      - HF_HUB_DISABLE_PROGRESS_BARS=1
+      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
+      - USE_SAFETENSORS=1
+      - TRANSFORMERS_OFFLINE=0
+      - TOKENIZERS_PARALLELISM=false
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+      - HF_HUB_DOWNLOAD_RETRY_COUNT=3
+      - MALLOC_ARENA_MAX=2
+      - OMP_NUM_THREADS=1
     restart: unless-stopped
 
   db:
@@ -80,23 +105,5 @@ services:
 
 volumes:
   postgres_data:
-  model_cache:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${PWD}/models_cache
-      o: bind
-  model_offload:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${PWD}/models_cache/offload
-      o: bind
   frontend_node_modules:
     driver: local
-  uploads:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${PWD}/uploads
-      o: bind

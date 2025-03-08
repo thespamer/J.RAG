@@ -8,7 +8,12 @@ RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     git \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -58,7 +63,14 @@ ENV HF_HUB_DISABLE_SYMLINKS_WARNING=1 \
     FLASK_DEBUG=1 \
     PYTHONPATH=/app/api \
     OMP_NUM_THREADS=1 \
-    PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32
+    PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32 \
+    HF_HUB_ENABLE_HF_TRANSFER=0 \
+    HF_TRANSFER_DISABLE=1 \
+    DISABLE_TELEMETRY=1 \
+    HF_HUB_DOWNLOAD_TIMEOUT=600 \
+    USE_SAFETENSORS=1 \
+    REQUESTS_CA_BUNDLE="" \
+    SSL_CERT_FILE=""
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \

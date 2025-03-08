@@ -34,38 +34,12 @@ import axios from '../../services/axios';
 
 function SystemStatus() {
   const [systemStatus, setSystemStatus] = React.useState({
-    diskSpace: {
-      total: 0,
-      used: 0,
-      available: 0
-    },
-    memory: {
-      total: 0,
-      used: 0,
-      available: 0
-    },
     model: {
       status: 'unknown', // unknown, downloading, loading, ready, error
       downloadProgress: 0,
       loadProgress: 0,
-      error: null,
-      integrityCheck: null
-    },
-    cache: {
-      size: 0,
-      files: 0,
-      lastCleanup: null
+      error: null
     }
-  });
-
-  const [modelConfig, setModelConfig] = React.useState({
-    lowCpuMemUsage: true,
-    useSafetensors: true,
-    offloadEnabled: true,
-    offloadFolder: '/app/models_cache/offload',
-    deviceMap: 'auto',
-    minDiskSpace: 10 * 1024 * 1024 * 1024, // 10GB
-    minMemory: 2 * 1024 * 1024 * 1024 // 2GB
   });
 
   const [configDialogOpen, setConfigDialogOpen] = React.useState(false);
@@ -130,9 +104,23 @@ function SystemStatus() {
 
   React.useEffect(() => {
     fetchSystemStatus();
-    const interval = setInterval(fetchSystemStatus, 5000);
+    
+    // Intervalo mais curto durante download/carregamento
+    const interval = setInterval(() => {
+      fetchSystemStatus();
+      
+      // Ajusta o intervalo baseado no status
+      if (systemStatus.model.status === 'downloading' || systemStatus.model.status === 'loading') {
+        return 2000; // 2 segundos durante download/loading
+      } else if (systemStatus.model.status === 'error') {
+        return 10000; // 10 segundos em caso de erro
+      } else {
+        return 5000; // 5 segundos para outros estados
+      }
+    }, systemStatus.model.status === 'downloading' || systemStatus.model.status === 'loading' ? 2000 : 5000);
+    
     return () => clearInterval(interval);
-  }, []);
+  }, [systemStatus.model.status]);
 
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B';
@@ -171,38 +159,107 @@ function SystemStatus() {
       )}
 
       <Grid container spacing={3}>
-        {/* Disk Space Card */}
-        <Grid item xs={12} md={6}>
+        {/* Model Status Card */}
+        <Grid item xs={12}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <StorageIcon sx={{ mr: 1 }} />
+                {systemStatus.model.status === 'ready' ? (
+                  <CheckCircleIcon color="success" sx={{ mr: 1 }} />
+                ) : systemStatus.model.status === 'downloading' ? (
+                  <CircularProgress size={24} sx={{ mr: 1 }} />
+                ) : systemStatus.model.status === 'loading' ? (
+                  <CircularProgress size={24} sx={{ mr: 1 }} />
+                ) : systemStatus.model.status === 'error' ? (
+                  <ErrorIcon color="error" sx={{ mr: 1 }} />
+                ) : (
+                  <WarningIcon color="warning" sx={{ mr: 1 }} />
+                )}
                 <Typography variant="h6">
-                  Disk Space
-                </Typography>
-              </Box>
-              
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body2" color="textSecondary" gutterBottom>
-                  Available: {formatBytes(systemStatus.diskSpace.available)}
-                </Typography>
-                <LinearProgress
-                  variant="determinate"
-                  value={(systemStatus.diskSpace.used / systemStatus.diskSpace.total) * 100}
-                  color={getStatusColor(
-                    (systemStatus.diskSpace.used / systemStatus.diskSpace.total) * 100,
-                    { medium: 70, high: 90 }
-                  )}
-                />
-                <Typography variant="caption" color="textSecondary">
-                  {formatBytes(systemStatus.diskSpace.used)} of {formatBytes(systemStatus.diskSpace.total)} used
+                  Model Status: {systemStatus.model.status.charAt(0).toUpperCase() + systemStatus.model.status.slice(1)}
                 </Typography>
               </Box>
 
-              {systemStatus.diskSpace.available < 10 * 1024 * 1024 * 1024 && (
+              {/* Progress bars para download e carregamento */}
+              {(systemStatus.model.status === 'downloading' || systemStatus.model.status === 'loading') && (
+                <Box sx={{ mt: 2 }}>
+                  {systemStatus.model.status === 'downloading' && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" color="textSecondary" gutterBottom>
+                        Downloading model files...
+                      </Typography>
+                      <LinearProgress
+                        variant={systemStatus.model.downloadProgress > 0 ? "determinate" : "indeterminate"}
+                        value={systemStatus.model.downloadProgress}
+                      />
+                      {systemStatus.model.downloadProgress > 0 && (
+                        <Typography variant="caption" color="textSecondary">
+                          {systemStatus.model.downloadProgress.toFixed(1)}% complete
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
+                  
+                  {systemStatus.model.status === 'loading' && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" color="textSecondary" gutterBottom>
+                        Loading model into memory...
+                      </Typography>
+                      <LinearProgress
+                        variant={systemStatus.model.loadProgress > 0 ? "determinate" : "indeterminate"}
+                        value={systemStatus.model.loadProgress}
+                      />
+                      {systemStatus.model.loadProgress > 0 && (
+                        <Typography variant="caption" color="textSecondary">
+                          {systemStatus.model.loadProgress.toFixed(1)}% complete
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+              )}
+
+              {/* Alertas de status */}
+              {systemStatus.model.error && (
+                <Alert severity="error" sx={{ mt: 1 }}>
+                  {systemStatus.model.error}
+                </Alert>
+              )}
+              
+              {systemStatus.diskSpace?.available < 10 * 1024 * 1024 * 1024 && (
                 <Alert severity="warning" sx={{ mt: 1 }}>
                   Less than 10GB available disk space. Model download and processing may be affected.
                 </Alert>
+              )}
+              
+              {systemStatus.memory?.available < 4 * 1024 * 1024 * 1024 && (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  Less than 4GB available memory. Model performance may be affected.
+                </Alert>
+              )}
+              
+              {/* Botões de ação */}
+              {systemStatus.model.status === 'error' && (
+                <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleCacheCleanup}
+                    disabled={loading}
+                    startIcon={<DeleteIcon />}
+                  >
+                    Clean Cache and Retry
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    onClick={fetchSystemStatus}
+                    disabled={loading}
+                    startIcon={<RefreshIcon />}
+                  >
+                    Check Status
+                  </Button>
+                </Box>
               )}
             </CardContent>
           </Card>
